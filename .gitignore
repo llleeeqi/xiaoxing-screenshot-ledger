@@ -1,0 +1,13 @@
+.gradle/
+**/build/
+local.properties
+*.iml
+.idea/
+*.apk
+
+test-assets/*
+!test-assets/mock-bills/
+!test-assets/mock-bills/*.png
+
+*.log
+.DS_Store

@@ -1,0 +1,10 @@
+<resources>
+    <string name="app_name">小星记账助手-截图录入</string>
+    <string name="tile_label">截图记账</string>
+    <string name="recent_tile_label">识别最近截图</string>
+    <string name="share_target_label">识别图片并记账</string>
+    <string name="projection_channel">截图记账服务</string>
+    <string name="projection_channel_description">保持一次性屏幕捕获授权，供快捷设置磁贴调用</string>
+    <string name="show_ocr_text">查看 OCR 原文</string>
+    <string name="hide_ocr_text">收起 OCR 原文</string>
+</resources>

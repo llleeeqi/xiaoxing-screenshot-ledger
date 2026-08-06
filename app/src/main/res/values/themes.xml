@@ -1,0 +1,25 @@
+<resources>
+    <style name="Theme.XingQuickLedger" parent="Theme.Material3.Light.NoActionBar">
+        <item name="colorPrimary">@color/brand</item>
+        <item name="colorOnPrimary">@color/on_brand</item>
+        <item name="colorPrimaryContainer">@color/brand_container</item>
+        <item name="colorOnPrimaryContainer">@color/on_brand_container</item>
+        <item name="colorSurface">@color/surface</item>
+        <item name="colorOnSurface">@color/text_primary</item>
+        <item name="colorOutline">@color/outline_soft</item>
+        <item name="colorError">@color/error</item>
+        <item name="android:colorAccent">@color/brand</item>
+        <item name="android:fontFamily">sans</item>
+        <item name="android:navigationBarColor">@color/surface</item>
+        <item name="android:statusBarColor">@color/surface</item>
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
+
+    <style name="Theme.XingQuickLedger.Transparent" parent="Theme.Material3.Light.NoActionBar">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:backgroundDimEnabled">false</item>
+        <item name="android:colorAccent">@color/brand</item>
+    </style>
+</resources>
