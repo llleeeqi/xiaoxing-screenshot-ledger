@@ -100,6 +100,17 @@ public final class TransactionParserTest {
         assertFalse(ordinaryScreen.hasBillKeywords());
     }
 
+    @Test
+    public void detectsShoppingPlatformFromImportedScreenshotText() {
+        TransactionDraft draft = TransactionParser.parse(Arrays.asList(
+                line("手机淘宝 订单详情", 10),
+                line("支付成功 ￥66.00", 60),
+                line("支付宝付款", 110)));
+
+        assertEquals("淘宝", draft.channel);
+        assertEquals("66", draft.amount);
+    }
+
     private static OcrLine line(String text, int top) {
         return new OcrLine(text, top, 0);
     }

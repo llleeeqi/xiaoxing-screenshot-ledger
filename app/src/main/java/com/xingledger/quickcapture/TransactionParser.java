@@ -61,6 +61,20 @@ public final class TransactionParser {
     }
 
     private static String detectChannel(String all) {
+        if (all.contains("天猫")) return "天猫";
+        if (containsAny(all, "手机淘宝", "淘宝")) return "淘宝";
+        if (all.contains("京东")) return "京东";
+        if (all.contains("拼多多")) return "拼多多";
+        if (all.contains("美团")) return "美团";
+        if (all.contains("饿了么")) return "饿了么";
+        if (all.contains("抖音")) return "抖音";
+        if (all.contains("快手")) return "快手";
+        if (all.contains("闲鱼")) return "闲鱼";
+        if (all.contains("唯品会")) return "唯品会";
+        if (all.contains("盒马")) return "盒马";
+        if (all.contains("携程")) return "携程";
+        if (all.contains("去哪儿")) return "去哪儿";
+        if (all.contains("滴滴")) return "滴滴";
         if (containsAny(all, "微信支付", "微信零钱", "零钱通", "微信转账")) return "微信";
         if (containsAny(all, "支付宝", "余额宝", "花呗")) return "支付宝";
         if (containsAny(all, "云闪付", "银联")) return "云闪付";

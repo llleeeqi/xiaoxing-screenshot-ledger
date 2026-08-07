@@ -21,8 +21,9 @@ public final class TransactionEnricher {
         if (realSource) draft.channel = candidate;
         String channel = clean(draft.channel);
         if (channel.isEmpty()) return;
-        String sourceNote = realSource && isShoppingPlatform(candidate)
-                ? "消费平台：" + candidate : "来源：" + channel;
+        String platform = realSource ? candidate : channel;
+        String sourceNote = isShoppingPlatform(platform)
+                ? "消费平台：" + platform : "来源：" + channel;
         String remark = clean(draft.remark);
         if (!remark.contains(sourceNote)) {
             draft.remark = remark.isEmpty() ? sourceNote : remark + " · " + sourceNote;

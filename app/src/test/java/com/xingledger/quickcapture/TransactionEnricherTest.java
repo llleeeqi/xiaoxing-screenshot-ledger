@@ -40,4 +40,15 @@ public final class TransactionEnricherTest {
         assertEquals("手机淘宝", draft.channel);
         assertEquals("日用品 · 消费平台：手机淘宝", draft.remark);
     }
+
+    @Test
+    public void importedShoppingScreenshotUsesOcrPlatform() {
+        TransactionDraft draft = new TransactionDraft();
+        draft.channel = "淘宝";
+
+        TransactionEnricher.addSource(draft, "相册分享");
+
+        assertEquals("淘宝", draft.channel);
+        assertEquals("消费平台：淘宝", draft.remark);
+    }
 }
