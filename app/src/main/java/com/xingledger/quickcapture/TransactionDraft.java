@@ -16,4 +16,16 @@ public final class TransactionDraft implements Serializable {
     public boolean hasAmount() {
         return amount != null && !amount.trim().isEmpty() && !"0".equals(amount.trim());
     }
+
+    public boolean hasBillKeywords() {
+        String text = rawText == null ? "" : rawText.replace(" ", "");
+        String[] keywords = {
+                "支付", "付款", "收款", "转账", "交易", "订单", "账单",
+                "退款", "扣款", "入账", "到账", "实付", "应付", "商户"
+        };
+        for (String keyword : keywords) {
+            if (text.contains(keyword)) return true;
+        }
+        return false;
+    }
 }

@@ -87,6 +87,10 @@ public final class ImportImageActivity extends AppCompatActivity {
         ImageOcrProcessor.process(this, uri, sourceLabel, new ImageOcrProcessor.Callback() {
             @Override
             public void onSuccess(TransactionDraft draft, String privateImagePath) {
+                if (!draft.hasBillKeywords()) {
+                    showError("未识别到账单", recentMode);
+                    return;
+                }
                 if (draft.hasAmount() && XiaoXingLauncher.openDialog(ImportImageActivity.this, draft)) {
                     moveTaskToBack(true);
                     return;

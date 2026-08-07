@@ -5,6 +5,8 @@ import org.junit.Test;
 import java.util.Arrays;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 public final class TransactionParserTest {
     @Test
@@ -80,6 +82,22 @@ public final class TransactionParserTest {
         assertEquals("招商银行储蓄卡(1234)", transfer.account);
         assertEquals("浦发银行储蓄卡(5678)", transfer.account2);
         assertEquals("手机银行", transfer.channel);
+    }
+
+    @Test
+    public void usesBillKeywordsWhenAmountIsMissing() {
+        TransactionDraft bill = TransactionParser.parse(Arrays.asList(
+                line("微信支付", 10),
+                line("订单详情", 60),
+                line("金额暂时无法识别", 110)));
+        assertFalse(bill.hasAmount());
+        assertTrue(bill.hasBillKeywords());
+
+        TransactionDraft ordinaryScreen = TransactionParser.parse(Arrays.asList(
+                line("今天天气晴朗", 10),
+                line("存储空间还剩 2.22 GB", 60)));
+        assertTrue(ordinaryScreen.hasAmount());
+        assertFalse(ordinaryScreen.hasBillKeywords());
     }
 
     private static OcrLine line(String text, int top) {

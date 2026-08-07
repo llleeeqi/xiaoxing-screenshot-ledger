@@ -24,7 +24,12 @@ public final class CaptureActivity extends AppCompatActivity {
             if (resultCode == CaptureContract.RESULT_CAPTURED) {
                 resultData.setClassLoader(TransactionDraft.class.getClassLoader());
                 TransactionDraft draft = (TransactionDraft) resultData.getSerializable(CaptureContract.EXTRA_DRAFT);
-                if (draft != null && draft.hasAmount() && XiaoXingLauncher.openDialog(CaptureActivity.this, draft)) {
+                if (draft == null || !draft.hasBillKeywords()) {
+                    Toast.makeText(CaptureActivity.this, "未识别到账单", Toast.LENGTH_LONG).show();
+                    finish();
+                    return;
+                }
+                if (draft.hasAmount() && XiaoXingLauncher.openDialog(CaptureActivity.this, draft)) {
                     // Keep this capture task behind XiaoXing so emulator task cleanup
                     // cannot kill the long-lived MediaProjection service.
                     moveTaskToBack(true);
