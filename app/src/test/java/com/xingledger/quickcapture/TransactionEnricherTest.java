@@ -27,4 +27,17 @@ public final class TransactionEnricherTest {
         assertEquals("支付宝", draft.channel);
         assertEquals("来源：支付宝", draft.remark);
     }
+
+    @Test
+    public void shoppingAppIsWrittenAsConsumptionPlatform() {
+        TransactionDraft draft = new TransactionDraft();
+        draft.channel = "支付宝";
+        draft.remark = "日用品";
+
+        TransactionEnricher.addSource(draft, "手机淘宝");
+        TransactionEnricher.addSource(draft, "手机淘宝");
+
+        assertEquals("手机淘宝", draft.channel);
+        assertEquals("日用品 · 消费平台：手机淘宝", draft.remark);
+    }
 }
