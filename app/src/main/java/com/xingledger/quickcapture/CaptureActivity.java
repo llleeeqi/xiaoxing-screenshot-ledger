@@ -64,6 +64,12 @@ public final class CaptureActivity extends AppCompatActivity {
         sourceApp = label == null || label.isEmpty()
                 ? ForegroundAppDetector.detect(this)
                 : new SourceApp(label, packageName);
+        if (AppBlacklist.isBlocked(this, sourceApp.packageName)) {
+            started = true;
+            String name = sourceApp.label.isEmpty() ? sourceApp.packageName : sourceApp.label;
+            Toast.makeText(this, getString(R.string.blacklist_skipped, name), Toast.LENGTH_LONG).show();
+            finish();
+        }
     }
 
     @Override

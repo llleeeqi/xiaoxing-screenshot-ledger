@@ -6,6 +6,7 @@ import android.graphics.BitmapFactory;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.os.Bundle;
+import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.ViewGroup;
 import android.widget.ImageView;
@@ -82,6 +83,33 @@ public final class ScreenshotViewerActivity extends AppCompatActivity {
                     ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
             chipParams.topMargin = dp(12);
             root.addView(channel, chipParams);
+        }
+
+        if (!record.ocrText.isEmpty()) {
+            MaterialCardView ocrCard = new MaterialCardView(this);
+            ocrCard.setRadius(dp(16));
+            ocrCard.setCardBackgroundColor(color(R.color.surface_card));
+            ocrCard.setStrokeColor(color(R.color.outline_soft));
+            ocrCard.setStrokeWidth(dp(1));
+            LinearLayout ocrBody = new LinearLayout(this);
+            ocrBody.setOrientation(LinearLayout.VERTICAL);
+            ocrBody.setPadding(dp(14), dp(11), dp(14), dp(11));
+            TextView ocrTitle = text("OCR 文字索引", 12, R.color.brand);
+            ocrTitle.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+            ocrBody.addView(ocrTitle);
+            TextView ocrText = text(record.ocrText, 12, R.color.text_secondary);
+            ocrText.setMaxLines(4);
+            ocrText.setEllipsize(TextUtils.TruncateAt.END);
+            ocrText.setTextIsSelectable(true);
+            LinearLayout.LayoutParams textParams = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            textParams.topMargin = dp(5);
+            ocrBody.addView(ocrText, textParams);
+            ocrCard.addView(ocrBody);
+            LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            cardParams.topMargin = dp(10);
+            root.addView(ocrCard, cardParams);
         }
 
         MaterialCardView imageCard = new MaterialCardView(this);

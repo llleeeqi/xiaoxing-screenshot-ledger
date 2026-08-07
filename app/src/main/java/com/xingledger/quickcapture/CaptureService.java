@@ -284,16 +284,21 @@ public final class CaptureService extends Service {
                         }
                         TransactionDraft draft = TransactionParser.parse(lines);
                         TransactionEnricher.addSource(draft, sourceApp);
-                        try {
-                            ScreenshotRepository.saveMetadata(
-                                    this, screenshotPath, capturedAt,
-                                    sourceApp, sourcePackage, draft.channel);
-                        } catch (IOException ignored) {
-                            // The image remains usable and will appear with fallback metadata.
+                        if (!draft.hasBillKeywords()) {
+                            deleteFileQuietly(screenshotPath);
+                        } else {
+                            try {
+                                ScreenshotRepository.saveMetadata(
+                                        this, screenshotPath, capturedAt,
+                                        sourceApp, sourcePackage, draft.channel, draft.rawText);
+                            } catch (IOException ignored) {
+                                // The image remains usable and will appear with fallback metadata.
+                            }
                         }
                         Bundle data = new Bundle();
                         data.putSerializable(CaptureContract.EXTRA_DRAFT, draft);
-                        data.putString(CaptureContract.EXTRA_SCREENSHOT, screenshotPath);
+                        data.putString(CaptureContract.EXTRA_SCREENSHOT,
+                                draft.hasBillKeywords() ? screenshotPath : "");
                         if (receiver != null) receiver.send(CaptureContract.RESULT_CAPTURED, data);
                     } finally {
                         bitmap.recycle();

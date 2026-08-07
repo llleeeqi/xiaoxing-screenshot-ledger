@@ -16,7 +16,9 @@ import java.util.Comparator;
 import java.util.List;
 
 public final class ScreenshotRepository {
+    public static final int MAX_RECORDS = 128;
     private static final String DIRECTORY = "screenshots";
+    private static final int MAX_OCR_TEXT_LENGTH = 32 * 1024;
 
     private ScreenshotRepository() {}
 
@@ -28,8 +30,9 @@ public final class ScreenshotRepository {
         return new File(directory, "capture_" + capturedAt + ".jpg");
     }
 
-    public static void saveMetadata(Context context, String imagePath, long capturedAt,
-                                    String appLabel, String appPackage, String channel) throws IOException {
+    public static synchronized void saveMetadata(Context context, String imagePath, long capturedAt,
+                                                 String appLabel, String appPackage, String channel,
+                                                 String ocrText) throws IOException {
         String resolvedLabel = firstNonBlank(appLabel, channel, "未知应用");
         JSONObject json = new JSONObject();
         try {
@@ -37,6 +40,7 @@ public final class ScreenshotRepository {
             json.put("appLabel", resolvedLabel);
             json.put("appPackage", value(appPackage));
             json.put("channel", value(channel));
+            json.put("ocrText", limited(value(ocrText)));
         } catch (JSONException error) {
             throw new IOException("无法保存截图信息", error);
         }
@@ -51,6 +55,7 @@ public final class ScreenshotRepository {
             if (output != null) atomic.failWrite(output);
             throw error;
         }
+        pruneToLimit(context);
     }
 
     public static List<ScreenshotRecord> list(Context context) {
@@ -59,6 +64,10 @@ public final class ScreenshotRepository {
         if (files == null) return records;
         for (File image : files) records.add(readRecord(image));
         records.sort(Comparator.comparingLong((ScreenshotRecord record) -> record.capturedAt).reversed());
+        if (records.size() > MAX_RECORDS) {
+            for (int index = MAX_RECORDS; index < records.size(); index++) delete(records.get(index));
+            return new ArrayList<>(records.subList(0, MAX_RECORDS));
+        }
         return records;
     }
 
@@ -88,6 +97,7 @@ public final class ScreenshotRepository {
         String appLabel = "未知应用";
         String appPackage = "";
         String channel = "";
+        String ocrText = "";
         File metadata = metadataFile(image);
         if (metadata.isFile()) {
             try (FileInputStream input = new FileInputStream(metadata)) {
@@ -99,12 +109,14 @@ public final class ScreenshotRepository {
                     appLabel = json.optString("appLabel", appLabel);
                     appPackage = json.optString("appPackage", "");
                     channel = json.optString("channel", "");
+                    ocrText = json.optString("ocrText", "");
                 }
             } catch (IOException | JSONException ignored) {
                 // Keep the image visible even if its optional metadata is damaged.
             }
         }
-        return new ScreenshotRecord(image.getAbsolutePath(), capturedAt, appLabel, appPackage, channel);
+        return new ScreenshotRecord(image.getAbsolutePath(), capturedAt, appLabel, appPackage,
+                channel, ocrText);
     }
 
     private static long capturedAtFromName(File image) {
@@ -133,5 +145,14 @@ public final class ScreenshotRepository {
 
     private static String value(String value) {
         return value == null ? "" : value;
+    }
+
+    private static String limited(String value) {
+        return value.length() <= MAX_OCR_TEXT_LENGTH
+                ? value : value.substring(0, MAX_OCR_TEXT_LENGTH);
+    }
+
+    private static void pruneToLimit(Context context) {
+        list(context);
     }
 }

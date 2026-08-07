@@ -7,6 +7,7 @@ import android.graphics.BitmapFactory;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.util.LruCache;
+import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
@@ -73,7 +74,7 @@ public final class ScreenshotAdapter extends RecyclerView.Adapter<ScreenshotAdap
         card.setStrokeColor(color(context, R.color.outline_soft));
         card.setStrokeWidth(dp(context, 1));
         RecyclerView.LayoutParams cardParams = new RecyclerView.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(context, 126));
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(context, 142));
         cardParams.bottomMargin = dp(context, 10);
         card.setLayoutParams(cardParams);
 
@@ -107,6 +108,13 @@ public final class ScreenshotAdapter extends RecyclerView.Adapter<ScreenshotAdap
         timeParams.topMargin = dp(context, 5);
         details.addView(time, timeParams);
 
+        TextView ocr = text(context, 12, R.color.text_secondary);
+        ocr.setSingleLine(true);
+        ocr.setEllipsize(TextUtils.TruncateAt.END);
+        LinearLayout.LayoutParams ocrParams = wrap();
+        ocrParams.topMargin = dp(context, 5);
+        details.addView(ocr, ocrParams);
+
         TextView channel = text(context, 11, R.color.brand);
         channel.setPadding(dp(context, 8), dp(context, 3), dp(context, 8), dp(context, 3));
         channel.setBackground(pill(context));
@@ -127,7 +135,7 @@ public final class ScreenshotAdapter extends RecyclerView.Adapter<ScreenshotAdap
         row.addView(delete, new LinearLayout.LayoutParams(dp(context, 44), dp(context, 44)));
 
         card.addView(row);
-        return new Holder(card, image, app, time, channel, delete);
+        return new Holder(card, image, app, time, ocr, channel, delete);
     }
 
     @Override
@@ -136,6 +144,8 @@ public final class ScreenshotAdapter extends RecyclerView.Adapter<ScreenshotAdap
         holder.app.setText(record.appLabel.isEmpty() ? "未知应用" : record.appLabel);
         holder.time.setText(new SimpleDateFormat("MM月dd日  HH:mm:ss", Locale.CHINA)
                 .format(new Date(record.capturedAt)));
+        String preview = record.ocrText.replace('\n', ' ').replaceAll("\\s+", " ").trim();
+        holder.ocr.setText(preview.isEmpty() ? "暂无 OCR 索引" : preview);
         holder.channel.setText(record.channel.isEmpty() ? "" : record.channel);
         holder.channel.setVisibility(record.channel.isEmpty() ? View.GONE : View.VISIBLE);
 
@@ -189,15 +199,17 @@ public final class ScreenshotAdapter extends RecyclerView.Adapter<ScreenshotAdap
         final ImageView image;
         final TextView app;
         final TextView time;
+        final TextView ocr;
         final TextView channel;
         final MaterialButton delete;
 
-        Holder(View itemView, ImageView image, TextView app, TextView time,
+        Holder(View itemView, ImageView image, TextView app, TextView time, TextView ocr,
                TextView channel, MaterialButton delete) {
             super(itemView);
             this.image = image;
             this.app = app;
             this.time = time;
+            this.ocr = ocr;
             this.channel = channel;
             this.delete = delete;
         }

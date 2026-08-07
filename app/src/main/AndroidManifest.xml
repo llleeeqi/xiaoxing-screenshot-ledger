@@ -30,6 +30,10 @@
         android:theme="@style/Theme.XingQuickLedger">
 
         <activity
+            android:name=".BlacklistActivity"
+            android:exported="false" />
+
+        <activity
             android:name=".ScreenshotViewerActivity"
             android:exported="false" />
 

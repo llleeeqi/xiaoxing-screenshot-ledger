@@ -17,10 +17,13 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.provider.Settings;
+import android.text.Editable;
+import android.text.TextWatcher;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
+import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -37,8 +40,15 @@ import androidx.recyclerview.widget.RecyclerView;
 import com.google.android.material.bottomsheet.BottomSheetDialog;
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.card.MaterialCardView;
+import com.google.android.material.chip.Chip;
+import com.google.android.material.chip.ChipGroup;
+import com.google.android.material.textfield.TextInputEditText;
+import com.google.android.material.textfield.TextInputLayout;
 
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 public final class MainActivity extends AppCompatActivity implements ScreenshotAdapter.Listener {
     private static final int REQUEST_PROJECTION = 7001;
@@ -48,6 +58,10 @@ public final class MainActivity extends AppCompatActivity implements ScreenshotA
     private TextView empty;
     private TextView usageStatus;
     private ScreenshotAdapter adapter;
+    private ChipGroup appFilters;
+    private TextInputEditText searchInput;
+    private final List<ScreenshotRecord> allRecords = new ArrayList<>();
+    private String selectedAppKey = "";
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
@@ -120,6 +134,35 @@ public final class MainActivity extends AppCompatActivity implements ScreenshotA
         heroBody.addView(countBox, new LinearLayout.LayoutParams(dp(76), dp(72)));
         hero.addView(heroBody);
         root.addView(hero, top(18));
+
+        TextInputLayout searchBox = new TextInputLayout(this,
+                null, com.google.android.material.R.attr.textInputOutlinedStyle);
+        searchBox.setHint("搜索 App、商户、金额或 OCR 文字");
+        searchBox.setBoxCornerRadii(dp(16), dp(16), dp(16), dp(16));
+        searchBox.setStartIconDrawable(R.drawable.ic_search);
+        searchInput = new TextInputEditText(searchBox.getContext());
+        searchInput.setSingleLine(true);
+        searchInput.setTextSize(14);
+        searchInput.addTextChangedListener(new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence value, int start, int count, int after) {}
+            @Override public void onTextChanged(CharSequence value, int start, int before, int count) {
+                applyFilters();
+            }
+            @Override public void afterTextChanged(Editable value) {}
+        });
+        searchBox.addView(searchInput, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        root.addView(searchBox, top(16));
+
+        appFilters = new ChipGroup(this);
+        appFilters.setSingleSelection(true);
+        appFilters.setSelectionRequired(true);
+        appFilters.setChipSpacingHorizontal(dp(8));
+        HorizontalScrollView filterScroll = new HorizontalScrollView(this);
+        filterScroll.setHorizontalScrollBarEnabled(false);
+        filterScroll.addView(appFilters, new HorizontalScrollView.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        root.addView(filterScroll, top(8));
 
         LinearLayout section = new LinearLayout(this);
         section.setGravity(Gravity.BOTTOM);
@@ -241,8 +284,16 @@ public final class MainActivity extends AppCompatActivity implements ScreenshotA
         usage.setOnClickListener(view -> openUsageAccessSettings());
         panel.addView(usage, top(10));
 
+        MaterialButton blacklist = actionButton(
+                getString(R.string.blacklist_manage, AppBlacklist.count(this)), false);
+        blacklist.setOnClickListener(view -> {
+            dialog.dismiss();
+            startActivity(new Intent(this, BlacklistActivity.class));
+        });
+        panel.addView(blacklist, top(8));
+
         panel.addView(text(
-                "这是可选权限；未授权时会用 OCR 推断微信、支付宝等渠道。\n\n小星记账还需要开启：侧边栏 → 设置 → 扩展功能 → URL Scheme。",
+                "这是可选权限；未授权时会用 OCR 推断微信、支付宝等渠道，但无法可靠执行截图黑名单。\n\n小星记账还需要开启：侧边栏 → 设置 → 扩展功能 → URL Scheme。",
                 12, color(R.color.text_secondary)), top(16));
 
         ScrollView scroll = new ScrollView(this);
@@ -253,11 +304,58 @@ public final class MainActivity extends AppCompatActivity implements ScreenshotA
 
     private void reloadRecords() {
         if (adapter == null) return;
-        List<ScreenshotRecord> records = ScreenshotRepository.list(this);
-        adapter.replace(records);
-        empty.setVisibility(records.isEmpty() ? View.VISIBLE : View.GONE);
-        recordCount.setText(String.valueOf(records.size()));
-        recordTitle.setText(records.isEmpty() ? "等待第一张" : "左右滑动删除");
+        allRecords.clear();
+        allRecords.addAll(ScreenshotRepository.list(this));
+        rebuildAppFilters();
+        applyFilters();
+        recordCount.setText(String.valueOf(allRecords.size()));
+    }
+
+    private void rebuildAppFilters() {
+        if (appFilters == null) return;
+        Map<String, String> apps = new LinkedHashMap<>();
+        for (ScreenshotRecord record : allRecords) {
+            apps.putIfAbsent(appKey(record), record.appLabel.isEmpty() ? "未知应用" : record.appLabel);
+        }
+        if (!selectedAppKey.isEmpty() && !apps.containsKey(selectedAppKey)) selectedAppKey = "";
+        appFilters.removeAllViews();
+        addAppFilter("", "全部");
+        for (Map.Entry<String, String> item : apps.entrySet()) addAppFilter(item.getKey(), item.getValue());
+    }
+
+    private void addAppFilter(String key, String label) {
+        Chip chip = new Chip(this);
+        chip.setId(View.generateViewId());
+        chip.setText(label);
+        chip.setCheckable(true);
+        chip.setChecked(key.equals(selectedAppKey));
+        chip.setOnClickListener(view -> {
+            selectedAppKey = key;
+            applyFilters();
+        });
+        appFilters.addView(chip);
+    }
+
+    private void applyFilters() {
+        if (adapter == null || empty == null) return;
+        String query = searchInput == null || searchInput.getText() == null
+                ? "" : searchInput.getText().toString();
+        List<ScreenshotRecord> filtered = new ArrayList<>();
+        for (ScreenshotRecord record : allRecords) {
+            if (!selectedAppKey.isEmpty() && !selectedAppKey.equals(appKey(record))) continue;
+            if (record.matchesQuery(query)) filtered.add(record);
+        }
+        adapter.replace(filtered);
+        empty.setText(allRecords.isEmpty()
+                ? "还没有截图记录\n开启截图授权并添加磁贴后，\n在账单页面点一下就能识别。"
+                : "没有匹配的截图\n换个 App 或关键词试试");
+        empty.setVisibility(filtered.isEmpty() ? View.VISIBLE : View.GONE);
+        recordTitle.setText(allRecords.isEmpty() ? "等待第一张"
+                : filtered.size() + " / " + allRecords.size() + " · 时间线新到旧");
+    }
+
+    private static String appKey(ScreenshotRecord record) {
+        return record.appPackage.isEmpty() ? "label:" + record.appLabel : "package:" + record.appPackage;
     }
 
     @Override

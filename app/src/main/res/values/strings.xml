@@ -7,4 +7,7 @@
     <string name="projection_channel_description">保持一次性屏幕捕获授权，供快捷设置磁贴调用</string>
     <string name="show_ocr_text">查看 OCR 原文</string>
     <string name="hide_ocr_text">收起 OCR 原文</string>
+    <string name="blacklist_summary">已拦截 %1$d 个应用 · 截图前判断</string>
+    <string name="blacklist_manage">管理截图黑名单 · %1$d 个</string>
+    <string name="blacklist_skipped">已跳过黑名单应用：%1$s</string>
 </resources>

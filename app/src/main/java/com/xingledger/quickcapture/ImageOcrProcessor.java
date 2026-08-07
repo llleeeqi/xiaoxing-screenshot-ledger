@@ -78,8 +78,13 @@ public final class ImageOcrProcessor {
                         }
                         TransactionDraft draft = TransactionParser.parse(lines);
                         TransactionEnricher.addSource(draft, sourceLabel);
+                        if (!draft.hasBillKeywords()) {
+                            delete(privateFile);
+                            callback.onSuccess(draft, "");
+                            return;
+                        }
                         ScreenshotRepository.saveMetadata(context, privateFile.getAbsolutePath(), capturedAt,
-                                sourceLabel, "", draft.channel);
+                                sourceLabel, "", draft.channel, draft.rawText);
                         callback.onSuccess(draft, privateFile.getAbsolutePath());
                     } catch (IOException error) {
                         delete(privateFile);
