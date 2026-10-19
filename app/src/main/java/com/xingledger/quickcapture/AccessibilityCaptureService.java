@@ -117,6 +117,7 @@ public final class AccessibilityCaptureService extends AccessibilityService {
                     sendError(receiver, "无法读取系统返回的截图");
                     return;
                 }
+                if (receiver != null) receiver.send(CaptureContract.RESULT_PROCESSING, Bundle.EMPTY);
                 ImageOcrProcessor.process(
                         AccessibilityCaptureService.this,
                         bitmap,
