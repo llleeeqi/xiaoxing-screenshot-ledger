@@ -9,11 +9,11 @@
 ### 实时截图磁贴
 
 1. 在小星记账中进入“侧边栏 → 设置 → 扩展功能”，开启 URL Scheme。
-2. 打开本助手，在设置中开启持续截图授权并添加“截图记账”磁贴。
+2. 打开本助手，在设置中开启“无痕截图记账”无障碍服务并添加“截图记账”磁贴。
 3. 停留在支付结果页，下拉并点击磁贴。
 4. 助手截图、OCR 后直接打开小星记账自动记账弹窗。
 
-一次屏幕捕获授权可在前台服务存活期间反复使用。手机重启、强制停止、系统回收服务或用户停止屏幕共享后，Android 会要求重新授权。
+Android 11 及以上使用系统 `AccessibilityService.takeScreenshot()`：用户只需首次手动开启服务，之后每次触发都只截取一帧，不建立 MediaProjection 会话、不显示持续屏幕共享，也不把图片写入系统相册。Android 8～10 保留 MediaProjection 兼容实现。
 
 ### 最近截图磁贴
 
@@ -63,7 +63,7 @@ am start \
 
 `extra_source_app` 和 `extra_source_package` 均为可选参数。未传来源时，助手会尝试读取前台 App；若未授予可选的“使用情况访问权限”，则使用 OCR 渠道推断。
 
-持续截图服务尚未授权或授权已失效时，这个 Action 会正常显示 Android 系统屏幕捕获确认框。
+无痕截图服务尚未开启时，这个 Action 会打开系统无障碍设置；开启一次后不再逐次申请投屏授权。Android 8～10 的兼容模式仍会显示系统屏幕捕获确认框。
 
 ### 识别系统最近截图并记账
 
@@ -86,19 +86,21 @@ am start \
 - 打开助手可查看截图时间、来源 App、识别渠道和 OCR 摘要；左右滑动或点击删除即可同时移除图片及元数据。
 - APK 明确移除了 `INTERNET` 和 `ACCESS_NETWORK_STATE` 权限，无法上传图片。
 - 使用 Android `FLAG_SECURE`、DRM 等安全保护的页面可能得到黑屏，不在支持范围内。
-- 无障碍权限不能合法绕过系统屏幕捕获授权，本项目不使用这种方式截图。
+- Android 11 及以上使用系统正式提供的无障碍截图 API；服务只订阅窗口切换事件以记录来源 App，不读取无障碍节点或界面控件文字。
+- 无障碍截图返回的像素直接进入应用内存，不会生成系统相册文件，因此无需执行可能误删用户照片的清理逻辑。
 
 ## 截图黑名单
 
 “设置与授权 → 管理截图黑名单”可按已安装 App 开关拦截。实时截图磁贴或当前屏幕外部 Action 触发后，助手会先判断前台 App；命中黑名单时直接提示并退出，图片像素不会被读取或保存。
 
-自动识别前台 App 依赖可选的“使用情况访问权限”。外部 Action 若显式传入 `extra_source_package`，也能直接参与黑名单判断。最近截图和相册分享属于用户明确选择图片的流程，不受当前前台 App 黑名单影响。
+Android 11 及以上优先使用无障碍窗口切换事件识别前台 App；兼容模式可选用“使用情况访问权限”。外部 Action 若显式传入 `extra_source_package`，也能直接参与黑名单判断。最近截图和相册分享属于用户明确选择图片的流程，不受当前前台 App 黑名单影响。
 
 ## 系统要求
 
 - Android 8.0（API 26）或更高版本。
 - 小星记账 3.5.0 或更高版本，并开启 URL Scheme。
-- 实时截图模式需要 Android MediaProjection 前台服务，因此授权有效期间会显示常驻通知。
+- Android 11 及以上实时截图不使用 MediaProjection，不显示屏幕共享或截图常驻通知。
+- Android 8～10 使用 MediaProjection 兼容模式，会按系统要求显示常驻通知。
 - “使用情况访问权限”只用于标记真实来源 App，可不授权。
 
 ## 构建
@@ -107,14 +109,21 @@ am start \
 
 ```bash
 export ANDROID_HOME=/path/to/android-sdk
-./gradlew testDebugUnitTest lintDebug assembleDebug
+./gradlew testDebugUnitTest lintDebug assembleDebug assembleRelease
 ```
 
 调试 APK 输出到：
 
 ```text
-app/build/outputs/apk/debug/app-debug.apk
+app/build/outputs/apk/debug/app-arm64-v8a-debug.apk
+app/build/outputs/apk/debug/app-armeabi-v7a-debug.apk
+app/build/outputs/apk/debug/app-x86_64-debug.apk
+app/build/outputs/apk/debug/app-universal-debug.apk
 ```
+
+日常手机优先安装 ARM64 包；x86_64 包供模拟器使用。各架构包都包含完整的离线中文 OCR，万能包仅用于 CPU 架构未知的设备。
+
+`releases/` 提供已签名的安装包，可直接安装；本地签名仅供个人测试，后续公开发行需要固定使用同一把正式签名密钥。ARM64 安装包约 12.5 MB；系统“应用大小”还会计入安装后解压的 OCR 原生库与运行优化文件，数值会高于 APK 文件大小。
 
 ## 模拟账单
 

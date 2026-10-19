@@ -10,16 +10,38 @@ android {
         applicationId 'com.xingledger.quickcapture'
         minSdk 26
         targetSdk 36
-        versionCode 6
-        versionName '0.3.2'
+        versionCode 8
+        versionName '0.4.1'
 
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
     }
 
     buildTypes {
-        release {
+        debug {
             minifyEnabled false
+        }
+        release {
+            // ML Kit's generated component graph fails under R8 optimization on
+            // real devices; ABI splits and compressed JNI already cut APK size.
+            minifyEnabled false
+            shrinkResources false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    splits {
+        abi {
+            enable true
+            reset()
+            include 'arm64-v8a', 'armeabi-v7a', 'x86_64'
+            universalApk true
+        }
+    }
+
+    packaging {
+        jniLibs {
+            // Smaller download/APK; Android extracts the one matching native library at install time.
+            useLegacyPackaging = true
         }
     }
 

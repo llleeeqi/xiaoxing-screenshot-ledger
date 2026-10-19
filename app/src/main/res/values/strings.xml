@@ -5,6 +5,8 @@
     <string name="share_target_label">识别图片并记账</string>
     <string name="projection_channel">截图记账服务</string>
     <string name="projection_channel_description">保持一次性屏幕捕获授权，供快捷设置磁贴调用</string>
+    <string name="accessibility_service_label">无痕截图记账</string>
+    <string name="accessibility_service_description">仅在你点击磁贴或外部触发时截取当前屏幕，用于本地 OCR 记账；不会读取界面文字、不会持续录屏，也不会把截图放进相册。</string>
     <string name="show_ocr_text">查看 OCR 原文</string>
     <string name="hide_ocr_text">收起 OCR 原文</string>
     <string name="blacklist_summary">已拦截 %1$d 个应用 · 截图前判断</string>

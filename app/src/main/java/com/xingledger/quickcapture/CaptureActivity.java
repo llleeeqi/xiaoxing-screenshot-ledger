@@ -4,9 +4,12 @@ import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
 import android.media.projection.MediaProjectionManager;
+import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.ResultReceiver;
+import android.provider.Settings;
 import android.widget.Toast;
 
 import androidx.annotation.Nullable;
@@ -30,9 +33,7 @@ public final class CaptureActivity extends AppCompatActivity {
                     return;
                 }
                 if (draft.hasAmount() && XiaoXingLauncher.openDialog(CaptureActivity.this, draft)) {
-                    // Keep this capture task behind XiaoXing so emulator task cleanup
-                    // cannot kill the long-lived MediaProjection service.
-                    moveTaskToBack(true);
+                    finish();
                     return;
                 }
                 startActivity(new Intent(CaptureActivity.this, ReviewActivity.class)
@@ -82,6 +83,22 @@ public final class CaptureActivity extends AppCompatActivity {
     }
 
     private void captureOrRequestPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            if (AccessibilityCaptureService.requestCapture(receiver, sourceApp)) return;
+            Toast.makeText(this,
+                    AccessibilityCaptureService.isEnabled(this)
+                            ? "无障碍截图服务正在连接，请稍后再试"
+                            : "请先开启“小星记账助手”的无痕截图服务",
+                    Toast.LENGTH_LONG).show();
+            try {
+                startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                        .setData(Uri.parse("package:" + getPackageName())));
+            } catch (RuntimeException ignored) {
+                startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS));
+            }
+            finish();
+            return;
+        }
         if (CaptureService.isReady()) {
             Intent service = new Intent(this, CaptureService.class).setAction(CaptureContract.ACTION_CAPTURE);
             service.putExtra(CaptureContract.EXTRA_RECEIVER, receiver);

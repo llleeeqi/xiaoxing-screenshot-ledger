@@ -1,1 +1,1 @@
-# The bundled ML Kit model is consumed through its public API.
+# Reserved for future release builds if ML Kit's R8 compatibility improves.

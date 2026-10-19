@@ -50,7 +50,8 @@ public final class ImageOcrProcessor {
                     }
                 }
                 Bitmap ready = bitmap;
-                main.post(() -> recognize(app, ready, privateFile, capturedAt, sourceLabel, callback));
+                main.post(() -> recognize(app, ready, privateFile, capturedAt,
+                        sourceLabel, "", callback));
             } catch (Exception error) {
                 if (bitmap != null) bitmap.recycle();
                 String message = safeMessage(error);
@@ -61,8 +62,38 @@ public final class ImageOcrProcessor {
         });
     }
 
+    /** Takes ownership of {@code bitmap}; it is recycled after OCR or on error. */
+    public static void process(Context context, Bitmap bitmap, String sourceLabel,
+                               String sourcePackage, Callback callback) {
+        Context app = context.getApplicationContext();
+        Handler main = new Handler(Looper.getMainLooper());
+        ExecutorService io = Executors.newSingleThreadExecutor();
+        io.execute(() -> {
+            File privateFile = null;
+            try {
+                long capturedAt = System.currentTimeMillis();
+                privateFile = ScreenshotRepository.newImageFile(app, capturedAt);
+                try (FileOutputStream output = new FileOutputStream(privateFile, false)) {
+                    if (!bitmap.compress(Bitmap.CompressFormat.JPEG, 90, output)) {
+                        throw new IOException("无法保存截图");
+                    }
+                }
+                File readyFile = privateFile;
+                main.post(() -> recognize(app, bitmap, readyFile, capturedAt,
+                        sourceLabel, sourcePackage, callback));
+            } catch (Exception error) {
+                bitmap.recycle();
+                if (privateFile != null) delete(privateFile);
+                String message = safeMessage(error);
+                main.post(() -> callback.onError(message));
+            } finally {
+                io.shutdown();
+            }
+        });
+    }
+
     private static void recognize(Context context, Bitmap bitmap, File privateFile, long capturedAt,
-                                  String sourceLabel, Callback callback) {
+                                  String sourceLabel, String sourcePackage, Callback callback) {
         TextRecognizer recognizer = TextRecognition.getClient(
                 new ChineseTextRecognizerOptions.Builder().build());
         recognizer.process(InputImage.fromBitmap(bitmap, 0))
@@ -84,7 +115,7 @@ public final class ImageOcrProcessor {
                             return;
                         }
                         ScreenshotRepository.saveMetadata(context, privateFile.getAbsolutePath(), capturedAt,
-                                sourceLabel, "", draft.channel, draft.rawText);
+                                sourceLabel, sourcePackage, draft.channel, draft.rawText);
                         callback.onSuccess(draft, privateFile.getAbsolutePath());
                     } catch (IOException error) {
                         delete(privateFile);

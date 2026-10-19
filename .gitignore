@@ -4,6 +4,7 @@ local.properties
 *.iml
 .idea/
 *.apk
+*.idsig
 
 test-assets/*
 !test-assets/mock-bills/

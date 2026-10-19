@@ -1,13 +1,11 @@
 package com.xingledger.quickcapture;
 
-import android.Manifest;
 import android.app.Activity;
 import android.app.StatusBarManager;
 import android.content.ActivityNotFoundException;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
-import android.content.pm.PackageManager;
 import android.content.res.ColorStateList;
 import android.graphics.Color;
 import android.graphics.Typeface;
@@ -31,6 +29,7 @@ import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.ContextCompat;
 import androidx.recyclerview.widget.ItemTouchHelper;
@@ -67,7 +66,6 @@ public final class MainActivity extends AppCompatActivity implements ScreenshotA
     protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(buildContent());
-        requestNotificationPermissionIfNeeded();
     }
 
     @Override
@@ -183,7 +181,7 @@ public final class MainActivity extends AppCompatActivity implements ScreenshotA
         listArea.addView(recycler, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
-        empty = text("还没有截图记录\n开启截图授权并添加磁贴后，\n在账单页面点一下就能识别。", 15, color(R.color.text_secondary));
+        empty = text("还没有截图记录\n开启无痕截图服务并添加磁贴后，\n在账单页面点一下就能识别。", 15, color(R.color.text_secondary));
         empty.setGravity(Gravity.CENTER);
         empty.setLineSpacing(dp(4), 1f);
         listArea.addView(empty, new FrameLayout.LayoutParams(
@@ -225,7 +223,7 @@ public final class MainActivity extends AppCompatActivity implements ScreenshotA
         TextView title = text("设置与授权", 23, color(R.color.text_primary));
         title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         panel.addView(title, top(18));
-        panel.addView(text("先授权一次，之后用快捷磁贴即可快速截图记账。", 13,
+        panel.addView(text("首次开启无痕截图服务，之后点磁贴即可快速记账。", 13,
                 color(R.color.text_secondary)), top(4));
 
         MaterialCardView serviceCard = card(color(R.color.surface), 18, 0);
@@ -236,10 +234,12 @@ public final class MainActivity extends AppCompatActivity implements ScreenshotA
         serviceTitle.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         service.addView(serviceTitle);
 
-        MaterialButton enable = actionButton("开启持续截图授权", true);
+        MaterialButton enable = actionButton(
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
+                        ? "开启无痕截图服务" : "开启兼容截图授权", true);
         enable.setIcon(ContextCompat.getDrawable(this, R.drawable.ic_camera));
         enable.setIconTint(ColorStateList.valueOf(color(R.color.on_brand)));
-        enable.setOnClickListener(view -> requestProjection());
+        enable.setOnClickListener(view -> requestCaptureAccess());
         service.addView(enable, top(12));
 
         MaterialButton tile = actionButton("添加“截图记账”磁贴", false);
@@ -262,12 +262,17 @@ public final class MainActivity extends AppCompatActivity implements ScreenshotA
                     .putExtra(CaptureContract.EXTRA_SOURCE_PACKAGE, getPackageName()));
         });
         secondary.addView(test, new LinearLayout.LayoutParams(0, dp(48), 1f));
-        MaterialButton stop = actionButton("停止服务", false);
+        MaterialButton stop = actionButton(
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.R ? "无障碍设置" : "停止服务", false);
         LinearLayout.LayoutParams stopParams = new LinearLayout.LayoutParams(0, dp(48), 1f);
         stopParams.leftMargin = dp(8);
         stop.setOnClickListener(view -> {
-            startService(new Intent(this, CaptureService.class).setAction(CaptureContract.ACTION_STOP));
-            status.postDelayed(this::updateStatus, 250);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                openAccessibilitySettings();
+            } else {
+                startService(new Intent(this, CaptureService.class).setAction(CaptureContract.ACTION_STOP));
+                status.postDelayed(this::updateStatus, 250);
+            }
         });
         secondary.addView(stop, stopParams);
         service.addView(secondary, top(8));
@@ -347,7 +352,7 @@ public final class MainActivity extends AppCompatActivity implements ScreenshotA
         }
         adapter.replace(filtered);
         empty.setText(allRecords.isEmpty()
-                ? "还没有截图记录\n开启截图授权并添加磁贴后，\n在账单页面点一下就能识别。"
+                ? "还没有截图记录\n开启无痕截图服务并添加磁贴后，\n在账单页面点一下就能识别。"
                 : "没有匹配的截图\n换个 App 或关键词试试");
         empty.setVisibility(filtered.isEmpty() ? View.VISIBLE : View.GONE);
         recordTitle.setText(allRecords.isEmpty() ? "等待第一张"
@@ -373,6 +378,29 @@ public final class MainActivity extends AppCompatActivity implements ScreenshotA
         ScreenshotRepository.delete(record);
         reloadRecords();
         Toast.makeText(this, "截图已删除", Toast.LENGTH_SHORT).show();
+    }
+
+    private void requestCaptureAccess() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            new AlertDialog.Builder(this)
+                    .setTitle("开启无痕截图服务")
+                    .setMessage("该服务只会在你点击“截图记账”磁贴或主动触发外部 Action 时截取一次屏幕，并在本机离线 OCR。它不会读取界面控件文字、不会持续录屏，也不会把截图放进系统相册。")
+                    .setNegativeButton("取消", null)
+                    .setPositiveButton("继续", (dialog, which) -> openAccessibilitySettings())
+                    .show();
+            return;
+        }
+        requestProjection();
+    }
+
+    private void openAccessibilitySettings() {
+        Intent intent = new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                .setData(Uri.parse("package:" + getPackageName()));
+        try {
+            startActivity(intent);
+        } catch (ActivityNotFoundException ignored) {
+            startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS));
+        }
     }
 
     private void requestProjection() {
@@ -426,21 +454,24 @@ public final class MainActivity extends AppCompatActivity implements ScreenshotA
 
     private void updateStatus() {
         if (status == null) return;
-        status.setText(CaptureService.isReady() ? "已就绪，点磁贴即可" : "等待开启截图授权");
-        status.setTextColor(color(CaptureService.isReady() ? R.color.success : R.color.on_brand_container));
+        boolean ready = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
+                ? AccessibilityCaptureService.isConnected() : CaptureService.isReady();
+        if (ready) {
+            status.setText("已就绪，点磁贴即可");
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
+                && AccessibilityCaptureService.isEnabled(this)) {
+            status.setText("截图服务正在连接");
+        } else {
+            status.setText(Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
+                    ? "等待开启无痕截图服务" : "等待开启截图授权");
+        }
+        status.setTextColor(color(ready ? R.color.success : R.color.on_brand_container));
     }
 
     private void updateUsageStatus() {
         if (usageStatus == null) return;
         usageStatus.setText(ForegroundAppDetector.hasPermission(this)
                 ? "已授权 · 会显示真实来源 App" : "未授权 · 当前使用 OCR 渠道推断");
-    }
-
-    private void requestNotificationPermissionIfNeeded() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
-                && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-            requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 7002);
-        }
     }
 
     private MaterialCardView card(int background, int radius, int elevation) {

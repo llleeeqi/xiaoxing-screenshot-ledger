@@ -23,6 +23,10 @@ public final class ForegroundAppDetector {
     }
 
     public static SourceApp detect(Context context) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            SourceApp accessibilitySource = AccessibilityCaptureService.lastSource(context);
+            if (!accessibilitySource.packageName.isEmpty()) return accessibilitySource;
+        }
         if (!hasPermission(context)) return SourceApp.UNKNOWN;
         UsageStatsManager manager = (UsageStatsManager) context.getSystemService(Context.USAGE_STATS_SERVICE);
         if (manager == null) return SourceApp.UNKNOWN;

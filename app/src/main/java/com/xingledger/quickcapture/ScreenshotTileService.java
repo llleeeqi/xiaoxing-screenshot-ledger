@@ -40,9 +40,11 @@ public final class ScreenshotTileService extends TileService {
     private void updateTileState() {
         Tile tile = getQsTile();
         if (tile == null) return;
-        tile.setState(CaptureService.isReady() ? Tile.STATE_ACTIVE : Tile.STATE_INACTIVE);
+        boolean ready = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
+                ? AccessibilityCaptureService.isConnected() : CaptureService.isReady();
+        tile.setState(ready ? Tile.STATE_ACTIVE : Tile.STATE_INACTIVE);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            tile.setSubtitle(CaptureService.isReady() ? "点击识别" : "点击授权");
+            tile.setSubtitle(ready ? "点击识别" : "点击开启服务");
         }
         tile.updateTile();
     }
