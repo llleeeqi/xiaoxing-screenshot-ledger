@@ -11,7 +11,6 @@ import android.content.Intent;
 import android.content.pm.ServiceInfo;
 import android.graphics.Bitmap;
 import android.graphics.PixelFormat;
-import android.graphics.Rect;
 import android.hardware.display.DisplayManager;
 import android.hardware.display.VirtualDisplay;
 import android.media.Image;
@@ -29,18 +28,7 @@ import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
 import androidx.core.app.ServiceCompat;
 
-import com.google.mlkit.vision.common.InputImage;
-import com.google.mlkit.vision.text.Text;
-import com.google.mlkit.vision.text.TextRecognition;
-import com.google.mlkit.vision.text.TextRecognizer;
-import com.google.mlkit.vision.text.chinese.ChineseTextRecognizerOptions;
-
-import java.io.File;
-import java.io.FileOutputStream;
-import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public final class CaptureService extends Service {
@@ -54,15 +42,14 @@ public final class CaptureService extends Service {
     private VirtualDisplay virtualDisplay;
     private ImageReader imageReader;
     private Image latestImage;
-    private TextRecognizer recognizer;
     private int captureWidth;
     private int captureHeight;
     private int density;
     private final AtomicBoolean captureInFlight = new AtomicBoolean(false);
-
-    public static boolean isReady() {
-        return ready;
-    }
+    private final AtomicBoolean outcomeSent = new AtomicBoolean(false);
+    private ResultReceiver activeReceiver;
+    private String activeSourcePackage = "";
+    private boolean stopping;
 
     @Override
     public void onCreate() {
@@ -71,32 +58,46 @@ public final class CaptureService extends Service {
         workerThread = new HandlerThread("xing-capture-worker");
         workerThread.start();
         worker = new Handler(workerThread.getLooper());
-        recognizer = TextRecognition.getClient(new ChineseTextRecognizerOptions.Builder().build());
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        if (intent == null) return START_NOT_STICKY;
-        String action = intent.getAction();
-        if (CaptureContract.ACTION_STOP.equals(action)) {
-            stopCaptureService();
+        if (intent == null) {
+            worker.post(this::stopCaptureService);
             return START_NOT_STICKY;
         }
-
-        if (CaptureContract.ACTION_START.equals(action) || CaptureContract.ACTION_START_AND_CAPTURE.equals(action)) {
-            startAsForeground();
-            if (!ready) startProjection(intent);
+        String action = intent.getAction();
+        if (CaptureContract.ACTION_STOP.equals(action)) {
+            worker.post(this::stopCaptureService);
+            return START_NOT_STICKY;
         }
-
-        if (CaptureContract.ACTION_CAPTURE.equals(action) || CaptureContract.ACTION_START_AND_CAPTURE.equals(action)) {
-            ResultReceiver receiver = receiverFrom(intent);
-            String sourceApp = intent.getStringExtra(CaptureContract.EXTRA_SOURCE_APP);
-            String sourcePackage = intent.getStringExtra(CaptureContract.EXTRA_SOURCE_PACKAGE);
-            if (!ready) {
-                sendError(receiver, "屏幕捕获授权已失效，请重新授权");
-            } else {
-                scheduleCapture(receiver, sourceApp, sourcePackage);
+        ResultReceiver receiver = receiverFrom(intent);
+        if (!CaptureContract.ACTION_START_AND_CAPTURE.equals(action)) {
+            sendError(receiver, "请重新点击磁贴并授权本次截图");
+            stopSelf(startId);
+            return START_NOT_STICKY;
+        }
+        if (ready || captureInFlight.get() || stopping) {
+            sendError(receiver, "正在识别上一张截图，请稍候");
+            return START_NOT_STICKY;
+        }
+        activeReceiver = receiver;
+        activeSourcePackage = intent.getStringExtra(CaptureContract.EXTRA_SOURCE_PACKAGE);
+        outcomeSent.set(false);
+        try {
+            startAsForeground();
+            if (!startProjection(intent)) {
+                failSession("系统截图授权已失效，请重新点击磁贴授权");
+                return START_NOT_STICKY;
             }
+            scheduleCapture(receiver, intent.getStringExtra(CaptureContract.EXTRA_SOURCE_APP),
+                    activeSourcePackage);
+            worker.postDelayed(() -> {
+                if (!stopping && !outcomeSent.get()) failSession("截图等待超时，请重试");
+            }, 12_000);
+        } catch (RuntimeException error) {
+            CaptureDiagnosticLog.record(this, "projection_start_failed", activeSourcePackage);
+            failSession("无法启动系统截图，请重试或改用最近截图模式");
         }
         return START_NOT_STICKY;
     }
@@ -107,10 +108,10 @@ public final class CaptureService extends Service {
         ServiceCompat.startForeground(this, NOTIFICATION_ID, buildNotification(), type);
     }
 
-    private void startProjection(Intent source) {
+    private boolean startProjection(Intent source) {
         int resultCode = source.getIntExtra(CaptureContract.EXTRA_RESULT_CODE, Activity.RESULT_CANCELED);
         Intent resultData = intentExtra(source, CaptureContract.EXTRA_RESULT_DATA);
-        if (resultCode != Activity.RESULT_OK || resultData == null) return;
+        if (resultCode != Activity.RESULT_OK || resultData == null) return false;
 
         captureWidth = Math.max(1, source.getIntExtra(CaptureContract.EXTRA_WIDTH, 1080));
         captureHeight = Math.max(1, source.getIntExtra(CaptureContract.EXTRA_HEIGHT, 1920));
@@ -119,10 +120,13 @@ public final class CaptureService extends Service {
         try {
             MediaProjectionManager manager = (MediaProjectionManager) getSystemService(Context.MEDIA_PROJECTION_SERVICE);
             projection = manager.getMediaProjection(resultCode, resultData);
+            if (projection == null) return false;
             projection.registerCallback(new MediaProjection.Callback() {
                 @Override
                 public void onStop() {
-                    worker.post(CaptureService.this::stopCaptureService);
+                    worker.post(() -> {
+                        if (!stopping) failSession("系统已结束屏幕共享，请重试");
+                    });
                 }
 
                 @Override
@@ -141,10 +145,13 @@ public final class CaptureService extends Service {
                     null,
                     worker);
             ready = true;
+            CaptureDiagnosticLog.record(this, "projection_started", activeSourcePackage);
             ScreenshotTileService.requestListeningState(this, new android.content.ComponentName(this, ScreenshotTileService.class));
+            return true;
         } catch (RuntimeException error) {
             ready = false;
-            stopSelf();
+            CaptureDiagnosticLog.record(this, "projection_create_failed", activeSourcePackage);
+            return false;
         }
     }
 
@@ -180,6 +187,7 @@ public final class CaptureService extends Service {
     private void acquireImage(ResultReceiver receiver, String sourceApp, String sourcePackage, int attempt) {
         ImageReader reader = imageReader;
         Image image = null;
+        Bitmap bitmap = null;
         try {
             if (reader != null) {
                 reader.setOnImageAvailableListener(null, null);
@@ -196,20 +204,38 @@ public final class CaptureService extends Service {
                     worker.postDelayed(() -> acquireImage(receiver, sourceApp, sourcePackage, attempt + 1), 90);
                 } else {
                     captureInFlight.set(false);
-                    restoreCacheListener();
-                    sendError(receiver, "暂时没有取得屏幕画面，请重试");
+                    failSession("暂时没有取得屏幕画面，请重试");
                 }
                 return;
             }
-            Bitmap bitmap = imageToBitmap(image);
-            restoreCacheListener();
-            long capturedAt = System.currentTimeMillis();
-            String screenshotPath = saveScreenshot(bitmap, capturedAt);
-            recognize(bitmap, screenshotPath, capturedAt, sourceApp, sourcePackage, receiver);
+            bitmap = imageToBitmap(image);
+            image.close();
+            image = null;
+            CaptureDiagnosticLog.record(this, "projection_frame_captured", sourcePackage);
+            if (receiver != null) receiver.send(CaptureContract.RESULT_PROCESSING, Bundle.EMPTY);
+            // Release the projection and foreground notification before OCR starts.
+            stopCaptureService();
+            ImageOcrProcessor.process(getApplicationContext(), bitmap, sourceApp, sourcePackage,
+                    new ImageOcrProcessor.Callback() {
+                        @Override
+                        public void onSuccess(TransactionDraft draft, String privateImagePath) {
+                            if (!outcomeSent.compareAndSet(false, true)) return;
+                            Bundle data = new Bundle();
+                            data.putSerializable(CaptureContract.EXTRA_DRAFT, draft);
+                            data.putString(CaptureContract.EXTRA_SCREENSHOT, privateImagePath);
+                            if (receiver != null) receiver.send(CaptureContract.RESULT_CAPTURED, data);
+                        }
+
+                        @Override
+                        public void onError(String message) {
+                            if (outcomeSent.compareAndSet(false, true)) sendError(receiver, message);
+                        }
+                    });
+            bitmap = null; // ImageOcrProcessor owns and recycles it.
         } catch (Exception error) {
             captureInFlight.set(false);
-            restoreCacheListener();
-            sendError(receiver, "截图处理失败：" + safeMessage(error));
+            if (bitmap != null && !bitmap.isRecycled()) bitmap.recycle();
+            failSession("截图处理失败：" + safeMessage(error));
         } finally {
             if (image != null) image.close();
         }
@@ -231,15 +257,15 @@ public final class CaptureService extends Service {
         }
     }
 
-    private void restoreCacheListener() {
-        ImageReader reader = imageReader;
-        if (reader != null) reader.setOnImageAvailableListener(this::cacheLatestImage, worker);
-    }
-
     private void closeLatestImage() {
-        if (latestImage != null) {
-            latestImage.close();
-            latestImage = null;
+        Image image = latestImage;
+        latestImage = null;
+        if (image != null) {
+            try {
+                image.close();
+            } catch (RuntimeException ignored) {
+                // Continue releasing the projection even if a frame is stale.
+            }
         }
     }
 
@@ -260,59 +286,6 @@ public final class CaptureService extends Service {
         return cropped;
     }
 
-    private String saveScreenshot(Bitmap bitmap, long capturedAt) throws IOException {
-        File file = ScreenshotRepository.newImageFile(this, capturedAt);
-        try (FileOutputStream output = new FileOutputStream(file, false)) {
-            if (!bitmap.compress(Bitmap.CompressFormat.JPEG, 88, output)) {
-                throw new IOException("无法编码截图");
-            }
-        }
-        return file.getAbsolutePath();
-    }
-
-    private void recognize(Bitmap bitmap, String screenshotPath, long capturedAt,
-                           String sourceApp, String sourcePackage, ResultReceiver receiver) {
-        recognizer.process(InputImage.fromBitmap(bitmap, 0))
-                .addOnSuccessListener(result -> {
-                    try {
-                        List<OcrLine> lines = new ArrayList<>();
-                        for (Text.TextBlock block : result.getTextBlocks()) {
-                            for (Text.Line line : block.getLines()) {
-                                Rect box = line.getBoundingBox();
-                                lines.add(new OcrLine(line.getText(), box == null ? 0 : box.top, box == null ? 0 : box.left));
-                            }
-                        }
-                        TransactionDraft draft = TransactionParser.parse(lines);
-                        TransactionEnricher.addSource(draft, sourceApp);
-                        if (!draft.hasBillKeywords()) {
-                            deleteFileQuietly(screenshotPath);
-                        } else {
-                            try {
-                                ScreenshotRepository.saveMetadata(
-                                        this, screenshotPath, capturedAt,
-                                        sourceApp, sourcePackage, draft.channel, draft.rawText);
-                            } catch (IOException ignored) {
-                                // The image remains usable and will appear with fallback metadata.
-                            }
-                        }
-                        Bundle data = new Bundle();
-                        data.putSerializable(CaptureContract.EXTRA_DRAFT, draft);
-                        data.putString(CaptureContract.EXTRA_SCREENSHOT,
-                                draft.hasBillKeywords() ? screenshotPath : "");
-                        if (receiver != null) receiver.send(CaptureContract.RESULT_CAPTURED, data);
-                    } finally {
-                        bitmap.recycle();
-                        captureInFlight.set(false);
-                    }
-                })
-                .addOnFailureListener(error -> {
-                    bitmap.recycle();
-                    captureInFlight.set(false);
-                    deleteFileQuietly(screenshotPath);
-                    sendError(receiver, "OCR 识别失败：" + safeMessage(error));
-                });
-    }
-
     private Notification buildNotification() {
         Intent openIntent = new Intent(this, MainActivity.class);
         PendingIntent open = PendingIntent.getActivity(this, 41, openIntent,
@@ -322,8 +295,8 @@ public final class CaptureService extends Service {
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         return new NotificationCompat.Builder(this, CHANNEL_ID)
                 .setSmallIcon(R.drawable.ic_notification)
-                .setContentTitle("截图记账已就绪")
-                .setContentText("点“截图记账”磁贴即可识别当前画面")
+                .setContentTitle("正在截取当前画面")
+                .setContentText("取得一帧后立即关闭屏幕共享")
                 .setContentIntent(open)
                 .setOngoing(true)
                 .setCategory(NotificationCompat.CATEGORY_SERVICE)
@@ -370,37 +343,52 @@ public final class CaptureService extends Service {
         return error.getMessage() == null ? error.getClass().getSimpleName() : error.getMessage();
     }
 
-    private static void deleteFileQuietly(@Nullable String path) {
-        if (path != null) {
-            //noinspection ResultOfMethodCallIgnored
-            new File(path).delete();
-        }
-    }
-
     private void stopCaptureService() {
+        if (stopping) return;
+        stopping = true;
         ready = false;
         captureInFlight.set(false);
         if (virtualDisplay != null) {
-            virtualDisplay.release();
+            try {
+                virtualDisplay.release();
+            } catch (RuntimeException ignored) {
+                // A system-terminated projection may have released it already.
+            }
             virtualDisplay = null;
         }
+        closeLatestImage();
         if (imageReader != null) {
-            imageReader.close();
+            try {
+                imageReader.close();
+            } catch (RuntimeException ignored) {
+                // Continue removing the foreground notification.
+            }
             imageReader = null;
         }
-        closeLatestImage();
         MediaProjection currentProjection = projection;
         projection = null;
-        if (currentProjection != null) currentProjection.stop();
+        if (currentProjection != null) {
+            try {
+                currentProjection.stop();
+            } catch (RuntimeException ignored) {
+                // The system may have stopped the session first.
+            }
+        }
+        CaptureDiagnosticLog.record(this, "projection_stopped", activeSourcePackage);
         ScreenshotTileService.requestListeningState(this, new android.content.ComponentName(this, ScreenshotTileService.class));
         stopForeground(STOP_FOREGROUND_REMOVE);
         stopSelf();
     }
 
+    private void failSession(String message) {
+        if (outcomeSent.compareAndSet(false, true)) sendError(activeReceiver, message);
+        worker.post(this::stopCaptureService);
+    }
+
     @Override
     public void onDestroy() {
+        if (!stopping) stopCaptureService();
         ready = false;
-        if (recognizer != null) recognizer.close();
         if (workerThread != null) workerThread.quitSafely();
         super.onDestroy();
     }

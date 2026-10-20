@@ -98,7 +98,8 @@ public final class CaptureActivity extends AppCompatActivity {
                 ? ForegroundAppDetector.detect(this)
                 : new SourceApp(label, packageName);
         CaptureDiagnosticLog.record(this, "capture_opened", sourceApp.packageName);
-        if (AppBlacklist.isBlocked(this, sourceApp.packageName)) {
+        if (CaptureMode.current(this) != CaptureMode.RECENT
+                && AppBlacklist.isBlocked(this, sourceApp.packageName)) {
             CaptureDiagnosticLog.record(this, "blacklist_skipped", sourceApp.packageName);
             started = true;
             String name = sourceApp.label.isEmpty() ? sourceApp.packageName : sourceApp.label;
@@ -139,14 +140,27 @@ public final class CaptureActivity extends AppCompatActivity {
     }
 
     private void captureOrRequestPermission() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+        CaptureMode mode = CaptureMode.current(this);
+        CaptureDiagnosticLog.record(this, "mode_" + mode.name().toLowerCase(java.util.Locale.ROOT),
+                sourceApp.packageName);
+        if (mode == CaptureMode.RECENT) {
+            startActivity(new Intent(this, ImportImageActivity.class)
+                    .setAction(CaptureContract.ACTION_RECENT_SCREENSHOT));
+            finish();
+            return;
+        }
+        if (mode == CaptureMode.ACCESSIBILITY) {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+                showFeedback("截图方式不可用", "当前 Android 版本不支持无障碍单帧截图，请选择系统授权截图。");
+                return;
+            }
             if (AccessibilityCaptureService.requestCapture(receiver, sourceApp)) return;
             CaptureDiagnosticLog.record(this, "accessibility_unavailable", sourceApp.packageName);
             new AlertDialog.Builder(this)
                     .setTitle("截图服务未就绪")
                     .setMessage(AccessibilityCaptureService.isEnabled(this)
                             ? "无障碍截图服务正在连接。请稍后重试；若一直如此，可在无障碍设置中重新开启。"
-                            : "请先开启“小星记账助手”的无痕截图服务。")
+                            : "请先开启“小星记账助手”的无痕截图服务，或在助手设置中改用系统授权截图。")
                     .setNegativeButton("关闭", (dialog, which) -> finish())
                     .setPositiveButton("打开设置", (dialog, which) -> {
                         try {
@@ -161,16 +175,11 @@ public final class CaptureActivity extends AppCompatActivity {
                     .show();
             return;
         }
-        if (CaptureService.isReady()) {
-            CaptureDiagnosticLog.record(this, "projection_capture_requested", sourceApp.packageName);
-            Intent service = new Intent(this, CaptureService.class).setAction(CaptureContract.ACTION_CAPTURE);
-            service.putExtra(CaptureContract.EXTRA_RECEIVER, receiver);
-            putSource(service);
-            DisplayInfo.from(this).putInto(service);
-            startService(service);
+        MediaProjectionManager manager = (MediaProjectionManager) getSystemService(Context.MEDIA_PROJECTION_SERVICE);
+        if (manager == null) {
+            showFeedback("截图不可用", "系统没有提供屏幕捕获服务。可改用系统截图后识别最近截图。");
             return;
         }
-        MediaProjectionManager manager = (MediaProjectionManager) getSystemService(Context.MEDIA_PROJECTION_SERVICE);
         CaptureDiagnosticLog.record(this, "projection_consent_requested", sourceApp.packageName);
         startActivityForResult(ProjectionConsent.createIntent(manager), REQUEST_PROJECTION);
     }
@@ -191,7 +200,12 @@ public final class CaptureActivity extends AppCompatActivity {
         service.putExtra(CaptureContract.EXTRA_RECEIVER, receiver);
         putSource(service);
         DisplayInfo.from(this).putInto(service);
-        ContextCompat.startForegroundService(this, service);
+        try {
+            ContextCompat.startForegroundService(this, service);
+        } catch (RuntimeException error) {
+            CaptureDiagnosticLog.record(this, "projection_service_failed", sourceApp.packageName);
+            showFeedback("截图识别失败", "无法启动系统截图服务，请重试或改用最近截图模式。");
+        }
     }
 
     private void putSource(Intent intent) {
