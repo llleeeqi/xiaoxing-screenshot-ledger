@@ -17,6 +17,8 @@ public final class TransactionParser {
             "(?:商户(?!单号)|商家|收款方(?!式)|付款方(?!式)|付款给|交易对象|对方账户|收款人)[：:]?\\s*(.*)");
     private static final Pattern EXPLICIT_ACCOUNT = Pattern.compile(
             "(?:付款方式|支付方式|收款方式|付款账户|收款账户|转出账户|扣款账户)[：:]?\\s*(.*)");
+    private static final Pattern EXPLICIT_PAYMENT_TIME = Pattern.compile(
+            "(?:付款时间|支付时间|交易时间|转账时间)[：:]?\\s*(.*)");
     private static final Pattern EXPLICIT_REMARK = Pattern.compile(
             "(?:商品说明|商品|备注|转账说明|付款说明)[：:]?\\s*(.*)");
 
@@ -104,7 +106,9 @@ public final class TransactionParser {
     private static int amountScore(String line, String context, String original, String normalized) {
         int score = 10;
         String compact = context.replace(" ", "");
-        if (containsAny(compact, "实付", "付款金额", "收款金额", "支付金额", "转账金额", "退款金额", "交易金额", "订单金额", "合计", "总计")) score += 100;
+        String[] totalLabels = {"实付", "付款金额", "收款金额", "支付金额", "转账金额", "退款金额", "交易金额", "订单金额", "合计", "总计"};
+        if (containsAny(line, totalLabels)) score += 150;
+        else if (containsAny(compact, totalLabels)) score += 70;
         else if (containsAny(compact, "支付成功", "付款成功", "收款成功", "转账成功", "交易成功", "退款成功")) score += 55;
         if (original.contains("¥") || original.contains("￥")) score += 40;
         if (line.trim().matches("^[¥￥$+\\-\\s]*[\\d,.]+$")) score += 25;
@@ -133,11 +137,19 @@ public final class TransactionParser {
     }
 
     private static String detectTime(List<OcrLine> lines) {
+        String paymentTime = findValue(lines, EXPLICIT_PAYMENT_TIME);
+        Matcher preferred = TIME.matcher(paymentTime);
+        if (preferred.find()) return normalizeTime(preferred.group(1));
         for (OcrLine line : lines) {
             Matcher matcher = TIME.matcher(line.text);
-            if (matcher.find()) return matcher.group(1).replace('年', '-').replace('月', '-').replace("日", "").replace('/', '-').replace('.', '-');
+            if (matcher.find()) return normalizeTime(matcher.group(1));
         }
         return "";
+    }
+
+    private static String normalizeTime(String time) {
+        return time.replace('年', '-').replace('月', '-').replace("日", "")
+                .replace('/', '-').replace('.', '-');
     }
 
     private static String detectShop(List<OcrLine> lines) {
@@ -171,16 +183,32 @@ public final class TransactionParser {
 
     private static String detectAccount(List<OcrLine> lines, String channel) {
         String explicit = cleanValue(findValue(lines, EXPLICIT_ACCOUNT));
-        if (!explicit.isEmpty()) return explicit;
+        if (!explicit.isEmpty()) return normalizePaymentAccount(explicit);
         for (OcrLine line : lines) {
             String text = line.text;
             if (containsAny(text, "零钱通", "微信零钱", "余额宝", "支付宝余额", "花呗", "信用卡", "储蓄卡", "借记卡")) {
                 return cleanValue(text.replaceFirst(".*?(?:付款方式|支付方式)[：:]?", ""));
             }
         }
+        // Shopping apps can show an Alipay trade number even when OCR misses the
+        // separate payment-method value. Do not use a status-bar icon as evidence.
+        for (OcrLine line : lines) {
+            if (line.text.contains("支付宝交易号")) return "支付宝";
+        }
         if ("微信".equals(channel)) return "微信零钱";
-        if ("支付宝".equals(channel)) return "支付宝余额";
+        if ("支付宝".equals(channel)) return "支付宝";
         return "";
+    }
+
+    private static String normalizePaymentAccount(String value) {
+        String compact = value.replaceAll("[\\s>〉]+$", "").replace(" ", "");
+        if (compact.equals("支付宝支付") || compact.equals("支付宝付款")
+                || compact.equals("支付宝")) return "支付宝";
+        if (compact.equals("微信支付") || compact.equals("微信付款")
+                || compact.equals("微信")) return "微信";
+        if (compact.equals("银行卡支付") || compact.equals("银行卡付款")
+                || compact.equals("银行卡")) return "银行卡";
+        return value;
     }
 
     private static String detectRemark(List<OcrLine> lines) {
@@ -204,8 +232,13 @@ public final class TransactionParser {
                     if (verticalDistance > 110) continue;
                     String candidate = cleanValue(neighbor.text);
                     if (candidate.isEmpty() || isFieldLabel(candidate)) continue;
+                    // Order-detail rows are read left-to-right. A value on the
+                    // same row wins over a closer value on the next row.
+                    int rowPenalty = verticalDistance <= 12 && neighbor.left > line.left
+                            ? 0 : 100_000;
                     int leftPenalty = neighbor.left >= line.left ? 0 : 10_000;
-                    int score = leftPenalty + verticalDistance * 20 + Math.abs(neighbor.left - line.left);
+                    int score = rowPenalty + leftPenalty + verticalDistance * 20
+                            + Math.abs(neighbor.left - line.left);
                     if (score < closestScore) {
                         closest = candidate;
                         closestScore = score;
@@ -218,7 +251,7 @@ public final class TransactionParser {
     }
 
     private static boolean isFieldLabel(String value) {
-        return value.matches("^(商户|商家|收款方|付款方|付款给|交易对象|对方账户|收款人|付款方式|支付方式|收款方式|付款账户|收款账户|转出账户|转入账户|扣款账户|商品说明|商品|备注|转账说明|付款说明|交易时间|收款时间|订单号|交易号|交易单号|交易流水)$");
+        return value.matches("^(商户|商家|收款方|付款方|付款给|交易对象|对方账户|收款人|付款方式|支付方式|收款方式|付款账户|收款账户|转出账户|转入账户|扣款账户|商品说明|商品|备注|转账说明|付款说明|付款时间|支付时间|交易时间|转账时间|创建时间|收款时间|订单号|交易号|交易单号|交易流水)$");
     }
 
     private static String neighborContext(List<OcrLine> lines, int index) {

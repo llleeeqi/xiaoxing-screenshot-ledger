@@ -95,12 +95,14 @@ public final class AccessibilityCaptureService extends AccessibilityService {
     }
 
     private void capture(ResultReceiver receiver, SourceApp requestedSource) {
+        SourceApp source = requestedSource == null || requestedSource.packageName.isEmpty()
+                ? lastSource(this) : requestedSource;
         if (!captureInFlight.compareAndSet(false, true)) {
+            CaptureDiagnosticLog.record(this, "capture_busy", source.packageName);
             sendError(receiver, "正在识别上一张截图，请稍候");
             return;
         }
-        SourceApp source = requestedSource == null || requestedSource.packageName.isEmpty()
-                ? lastSource(this) : requestedSource;
+        CaptureDiagnosticLog.record(this, "screenshot_requested", source.packageName);
         TakeScreenshotCallback callback = new TakeScreenshotCallback() {
             @Override
             public void onSuccess(ScreenshotResult screenshot) {
@@ -109,14 +111,20 @@ public final class AccessibilityCaptureService extends AccessibilityService {
                     bitmap = copyToSoftwareBitmap(screenshot);
                 } catch (RuntimeException error) {
                     captureInFlight.set(false);
+                    CaptureDiagnosticLog.record(AccessibilityCaptureService.this,
+                            "bitmap_copy_failed", source.packageName);
                     sendError(receiver, "读取截图失败：" + safeMessage(error));
                     return;
                 }
                 if (bitmap == null) {
                     captureInFlight.set(false);
+                    CaptureDiagnosticLog.record(AccessibilityCaptureService.this,
+                            "bitmap_unavailable", source.packageName);
                     sendError(receiver, "无法读取系统返回的截图");
                     return;
                 }
+                CaptureDiagnosticLog.record(AccessibilityCaptureService.this,
+                        "screenshot_captured", source.packageName);
                 if (receiver != null) receiver.send(CaptureContract.RESULT_PROCESSING, Bundle.EMPTY);
                 ImageOcrProcessor.process(
                         AccessibilityCaptureService.this,
@@ -127,6 +135,8 @@ public final class AccessibilityCaptureService extends AccessibilityService {
                             @Override
                             public void onSuccess(TransactionDraft draft, String privateImagePath) {
                                 captureInFlight.set(false);
+                                CaptureDiagnosticLog.record(AccessibilityCaptureService.this,
+                                        "ocr_completed", source.packageName);
                                 Bundle result = new Bundle();
                                 result.putSerializable(CaptureContract.EXTRA_DRAFT, draft);
                                 result.putString(CaptureContract.EXTRA_SCREENSHOT, privateImagePath);
@@ -138,6 +148,8 @@ public final class AccessibilityCaptureService extends AccessibilityService {
                             @Override
                             public void onError(String message) {
                                 captureInFlight.set(false);
+                                CaptureDiagnosticLog.record(AccessibilityCaptureService.this,
+                                        "ocr_failed", source.packageName);
                                 sendError(receiver, message);
                             }
                         });
@@ -146,6 +158,8 @@ public final class AccessibilityCaptureService extends AccessibilityService {
             @Override
             public void onFailure(int errorCode) {
                 captureInFlight.set(false);
+                CaptureDiagnosticLog.record(AccessibilityCaptureService.this,
+                        "screenshot_failed", source.packageName, errorCode);
                 sendError(receiver, screenshotError(errorCode));
             }
         };
@@ -153,6 +167,7 @@ public final class AccessibilityCaptureService extends AccessibilityService {
             takeScreenshot(Display.DEFAULT_DISPLAY, captureExecutor, callback);
         } catch (RuntimeException error) {
             captureInFlight.set(false);
+            CaptureDiagnosticLog.record(this, "screenshot_start_failed", source.packageName);
             sendError(receiver, "启动截图失败：" + safeMessage(error));
         }
     }

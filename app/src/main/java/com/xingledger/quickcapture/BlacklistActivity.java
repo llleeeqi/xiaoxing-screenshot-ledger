@@ -46,7 +46,9 @@ public final class BlacklistActivity extends AppCompatActivity {
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        setContentView(buildContent());
+        View content = buildContent();
+        SystemBarInsets.apply(content);
+        setContentView(content);
         loadApps();
     }
 

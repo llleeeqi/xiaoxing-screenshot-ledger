@@ -111,6 +111,51 @@ public final class TransactionParserTest {
         assertEquals("66", draft.amount);
     }
 
+    @Test
+    public void taobaoOrderUsesExplicitAlipayPaymentMethodAsAccount() {
+        TransactionDraft draft = TransactionParser.parse(Arrays.asList(
+                new OcrLine("待发货", 100, 400),
+                new OcrLine("示例数码配件店", 600, 100),
+                new OcrLine("示例商品原价", 750, 300),
+                new OcrLine("¥41.84", 750, 800),
+                new OcrLine("实付价¥14.47", 920, 300),
+                new OcrLine("实付款", 1100, 40),
+                new OcrLine("¥14.47", 1100, 780),
+                new OcrLine("天猫积分", 1480, 40),
+                new OcrLine("支付方式", 1400, 40),
+                new OcrLine("支付宝支付", 1400, 730),
+                new OcrLine("支付宝交易号", 1560, 40),
+                new OcrLine("2099010100000000000000000000", 1560, 400),
+                new OcrLine("付款时间", 1710, 40),
+                new OcrLine("2099-01-01 09:21:51", 1710, 500)));
+
+        assertEquals("14.47", draft.amount);
+        assertEquals("支付宝", draft.account);
+        assertEquals("天猫", draft.channel);
+        assertEquals("2099-01-01 09:21:51", draft.time);
+    }
+
+    @Test
+    public void alipayTradeNumberIsFallbackIfPaymentMethodIsUnreadable() {
+        TransactionDraft draft = TransactionParser.parse(Arrays.asList(
+                line("淘宝订单详情", 10),
+                line("实付款¥14.47", 60),
+                line("支付宝交易号 2099010100000000000000000000", 110)));
+
+        assertEquals("支付宝", draft.account);
+        assertEquals("淘宝", draft.channel);
+    }
+
+    @Test
+    public void sameRowPaymentValueWinsOverNearbyNextRow() {
+        TransactionDraft draft = TransactionParser.parse(Arrays.asList(
+                new OcrLine("支付方式", 400, 40),
+                new OcrLine("银行卡支付", 425, 90),
+                new OcrLine("支付宝支付", 400, 760),
+                new OcrLine("实付款¥8.00", 500, 40)));
+        assertEquals("支付宝", draft.account);
+    }
+
     private static OcrLine line(String text, int top) {
         return new OcrLine(text, top, 0);
     }

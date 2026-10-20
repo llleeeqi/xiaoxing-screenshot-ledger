@@ -7,7 +7,12 @@ public final class SourceApp {
     public final String packageName;
 
     public SourceApp(String label, String packageName) {
-        this.label = label == null ? "" : label;
         this.packageName = packageName == null ? "" : packageName;
+        String name = label == null ? "" : label;
+        if (name.isEmpty() || name.equals(this.packageName)) {
+            if ("com.taobao.taobao".equals(this.packageName)) name = "淘宝";
+            else if ("com.xunmeng.pinduoduo".equals(this.packageName)) name = "拼多多";
+        }
+        this.label = name;
     }
 }

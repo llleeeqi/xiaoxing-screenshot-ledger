@@ -15,6 +15,7 @@ import android.view.ViewGroup;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -34,7 +35,9 @@ public final class ImportImageActivity extends AppCompatActivity {
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        setContentView(buildContent());
+        View content = buildContent();
+        SystemBarInsets.apply(content);
+        setContentView(content);
         handle(getIntent());
     }
 
@@ -47,9 +50,13 @@ public final class ImportImageActivity extends AppCompatActivity {
 
     private void handle(Intent intent) {
         recentMode = CaptureContract.ACTION_RECENT_SCREENSHOT.equals(intent.getAction());
+        CaptureDiagnosticLog.record(this, recentMode ? "recent_opened" : "share_opened", "");
         if (recentMode) {
             if (hasPhotoAccess()) processRecent();
-            else showPermissionRequired();
+            else {
+                CaptureDiagnosticLog.record(this, "photo_permission_required", "");
+                showPermissionRequired();
+            }
             return;
         }
         if (!Intent.ACTION_SEND.equals(intent.getAction())
@@ -71,6 +78,7 @@ public final class ImportImageActivity extends AppCompatActivity {
     private void processRecent() {
         Uri uri = RecentScreenshotFinder.find(this);
         if (uri == null) {
+            CaptureDiagnosticLog.record(this, "recent_screenshot_missing", "");
             boolean partial = Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE
                     && checkSelfPermission(Manifest.permission.READ_MEDIA_IMAGES) != PackageManager.PERMISSION_GRANTED
                     && checkSelfPermission(Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED) == PackageManager.PERMISSION_GRANTED;
@@ -83,18 +91,26 @@ public final class ImportImageActivity extends AppCompatActivity {
     }
 
     private void process(Uri uri, String sourceLabel, String message) {
+        CaptureDiagnosticLog.record(this, "image_ocr_started", "");
         showLoading(message);
         ImageOcrProcessor.process(this, uri, sourceLabel, new ImageOcrProcessor.Callback() {
             @Override
             public void onSuccess(TransactionDraft draft, String privateImagePath) {
                 if (!draft.hasBillKeywords()) {
+                    CaptureDiagnosticLog.record(ImportImageActivity.this, "no_bill_keywords", "");
                     showError("未识别到账单", recentMode);
                     return;
                 }
                 if (draft.hasAmount() && XiaoXingLauncher.openDialog(ImportImageActivity.this, draft)) {
+                    CaptureDiagnosticLog.record(ImportImageActivity.this, "handoff_xiaoxing", "");
+                    Toast.makeText(ImportImageActivity.this,
+                            "已识别，正在打开小星记账", Toast.LENGTH_SHORT).show();
                     moveTaskToBack(true);
                     return;
                 }
+                CaptureDiagnosticLog.record(ImportImageActivity.this, "handoff_review", "");
+                Toast.makeText(ImportImageActivity.this,
+                        "已识别，请校正账单", Toast.LENGTH_SHORT).show();
                 startActivity(new Intent(ImportImageActivity.this, ReviewActivity.class)
                         .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP)
                         .putExtra(CaptureContract.EXTRA_DRAFT, draft)
@@ -104,6 +120,7 @@ public final class ImportImageActivity extends AppCompatActivity {
 
             @Override
             public void onError(String message) {
+                CaptureDiagnosticLog.record(ImportImageActivity.this, "image_ocr_failed", "");
                 showError(message, true);
             }
         });

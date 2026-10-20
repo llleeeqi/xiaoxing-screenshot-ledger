@@ -48,6 +48,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.io.IOException;
 
 public final class MainActivity extends AppCompatActivity implements ScreenshotAdapter.Listener {
     private static final int REQUEST_PROJECTION = 7001;
@@ -65,7 +66,9 @@ public final class MainActivity extends AppCompatActivity implements ScreenshotA
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        setContentView(buildContent());
+        View content = buildContent();
+        SystemBarInsets.apply(content);
+        setContentView(content);
     }
 
     @Override
@@ -296,6 +299,19 @@ public final class MainActivity extends AppCompatActivity implements ScreenshotA
             startActivity(new Intent(this, BlacklistActivity.class));
         });
         panel.addView(blacklist, top(8));
+
+        MaterialButton exportLog = actionButton("导出诊断日志", false);
+        exportLog.setOnClickListener(view -> {
+            try {
+                CaptureDiagnosticLog.share(this);
+            } catch (IOException | RuntimeException error) {
+                Toast.makeText(this, "导出失败，请稍后重试", Toast.LENGTH_SHORT).show();
+            }
+        });
+        panel.addView(exportLog, top(8));
+        panel.addView(text("日志最多约 64 KB，仅记时间、流程阶段、来源 App 包名和系统错误码；"
+                + "不会包含图片、识别文字或账单内容。仅在你主动分享时离开本机。",
+                12, color(R.color.text_secondary)), top(6));
 
         panel.addView(text(
                 "这是可选权限；未授权时会用 OCR 推断微信、支付宝等渠道，但无法可靠执行截图黑名单。\n\n小星记账还需要开启：侧边栏 → 设置 → 扩展功能 → URL Scheme。",

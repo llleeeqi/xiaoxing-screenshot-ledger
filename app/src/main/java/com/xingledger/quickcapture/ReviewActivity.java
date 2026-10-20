@@ -63,7 +63,9 @@ public final class ReviewActivity extends AppCompatActivity {
         source = draftExtra(intent);
         if (source == null) source = new TransactionDraft();
         screenshotPath = intent.getStringExtra(CaptureContract.EXTRA_SCREENSHOT);
-        setContentView(buildContent(screenshotPath));
+        View content = buildContent(screenshotPath);
+        SystemBarInsets.apply(content);
+        setContentView(content);
     }
 
     private View buildContent(@Nullable String screenshotPath) {

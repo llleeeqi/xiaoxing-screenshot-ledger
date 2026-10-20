@@ -39,7 +39,9 @@ public final class ScreenshotViewerActivity extends AppCompatActivity {
             finish();
             return;
         }
-        setContentView(buildContent());
+        LinearLayout content = buildContent();
+        SystemBarInsets.apply(content);
+        setContentView(content);
     }
 
     private LinearLayout buildContent() {

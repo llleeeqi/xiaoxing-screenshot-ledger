@@ -14,9 +14,10 @@ public final class ScreenshotRecord {
                             String channel, String ocrText) {
         this.imagePath = imagePath;
         this.capturedAt = capturedAt;
-        this.appLabel = appLabel == null ? "" : appLabel;
         this.appPackage = appPackage == null ? "" : appPackage;
-        this.channel = channel == null ? "" : channel;
+        this.appLabel = new SourceApp(appLabel, this.appPackage).label;
+        String savedChannel = channel == null ? "" : channel;
+        this.channel = savedChannel.equals(this.appPackage) ? this.appLabel : savedChannel;
         this.ocrText = ocrText == null ? "" : ocrText;
     }
 

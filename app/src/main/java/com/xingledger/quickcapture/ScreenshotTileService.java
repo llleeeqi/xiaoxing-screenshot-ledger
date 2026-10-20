@@ -6,6 +6,7 @@ import android.content.Intent;
 import android.os.Build;
 import android.service.quicksettings.Tile;
 import android.service.quicksettings.TileService;
+import android.widget.Toast;
 
 public final class ScreenshotTileService extends TileService {
     @Override
@@ -20,18 +21,24 @@ public final class ScreenshotTileService extends TileService {
         super.onClick();
         Runnable launch = () -> {
             SourceApp source = ForegroundAppDetector.detect(this);
+            CaptureDiagnosticLog.record(this, "tile_tap", source.packageName);
             Intent intent = new Intent(this, CaptureActivity.class)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP)
                     .putExtra(CaptureContract.EXTRA_SOURCE_APP, source.label)
                     .putExtra(CaptureContract.EXTRA_SOURCE_PACKAGE, source.packageName);
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                PendingIntent pendingIntent = PendingIntent.getActivity(
-                        this, 31, intent,
-                        PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
-                startActivityAndCollapse(pendingIntent);
-            } else {
-                //noinspection deprecation
-                startActivityAndCollapse(intent);
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                    PendingIntent pendingIntent = PendingIntent.getActivity(
+                            this, 31, intent,
+                            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+                    startActivityAndCollapse(pendingIntent);
+                } else {
+                    //noinspection deprecation
+                    startActivityAndCollapse(intent);
+                }
+            } catch (RuntimeException error) {
+                CaptureDiagnosticLog.record(this, "tile_launch_failed", source.packageName);
+                Toast.makeText(this, "截图记账未能启动，请重试", Toast.LENGTH_SHORT).show();
             }
         };
         if (isLocked()) unlockAndRun(launch); else launch.run();
